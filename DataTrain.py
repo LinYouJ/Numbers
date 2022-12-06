@@ -2,13 +2,13 @@ import torch
 from torch.utils import data as Data
 import torch.nn as nn
 import torchvision
-import matplotlib.pyplot as plt
 import os
 
-EPOCH = 1
+EPOCH = 10
 BATCH_SIZE = 50  #批量訓練50組資料
 LR = 0.001
 DOWNLOAD_MNIST = False
+if_use_gpu = 1
 
 if not (os.path.exists('./mnist/')) or not os.listdir('./mnist/'):
     DOWNLOAD_MNIST = True
@@ -22,17 +22,15 @@ train_data = torchvision.datasets.MNIST(
 
 print(f'Train_Data:{train_data.train_data.size()}')
 print(f'Train_Label:{train_data.train_labels.size()}')
-# plt.ion()
-# for i in range(11):
-#     plt.imshow(train_data.train_data[i].numpy(), cmap = 'gray')
-#     plt.title(f'{train_data.train_labels[i]}')
-#     plt.pause(0.1)
-# plt.show()
+
 train_load = Data.DataLoader(dataset=train_data, batch_size=BATCH_SIZE, shuffle=True)
 
 test_data = torchvision.datasets.MNIST(root='./mnist/', train=False)
 test_x = torch.unsqueeze(test_data.test_data, dim=1).type(torch.FloatTensor)[:1000]/255.
 test_y = test_data.test_labels[:1000]
+if if_use_gpu:
+    test_x = test_x.cuda()
+    test_y = test_y.cuda()
 
 class CNN(nn.Module):
     def __init__(self):
@@ -62,11 +60,16 @@ class CNN(nn.Module):
         return output, x
 
 cnn = CNN()
+if if_use_gpu:
+    cnn = cnn.cuda()
 optimizer = torch.optim.Adam(cnn.parameters(), lr=LR)
 loss_func = nn.CrossEntropyLoss()
 
 for epoch in range(EPOCH):
     for step, (b_x, b_y) in enumerate(train_load):
+        if if_use_gpu:
+            b_x = b_x.cuda()
+            b_y = b_y.cuda()
         out = cnn(b_x)[0]
         loss = loss_func(out, b_y)
         optimizer.zero_grad()
@@ -74,20 +77,29 @@ for epoch in range(EPOCH):
         optimizer.step()
         # 追蹤訓練過程
         if step % 50 == 0:
-            plt.cla()
-            test_output, last_layer = cnn(test_x)  #輸入資料已轉換為概率(0~1)
-            pred_y = torch.max(test_output, 1)[1].data.numpy()  #輸出資料亦為概率,所以不須F.softmax處理
-            accuracy = float((pred_y == test_y.data.numpy()).astype(int).sum())  / float(test_y.size(0))
-            print(f'epoch:{epoch}, train_loss:{loss.data.numpy()}, test_accuracy:{accuracy}')
+            if if_use_gpu:
+                test_output, last_layer = cnn(test_x)  #輸入資料已轉換為概率(0~1)
+                pred_y = torch.max(test_output, 1)[1].cuda().data.squeeze()  #輸出資料亦為概率,所以不須F.softmax處理
+                accuracy = (pred_y == test_y).sum().item() / test_y.size(0)
+                print(f'epoch:{epoch}, train_loss:{loss.data.item()}, test_accuracy:{accuracy}')
+            else:
+                test_output, last_layer = cnn(test_x)  #輸入資料已轉換為概率(0~1)
+                pred_y = torch.max(test_output, 1)[1].data.numpy()  #輸出資料亦為概率,所以不須F.softmax處理
+                accuracy = float((pred_y == test_y.data.numpy()).astype(int).sum())  / float(test_y.size(0))
+                print(f'epoch:{epoch}, train_loss:{loss.data.numpy()}, test_accuracy:{accuracy}')
 # 比對判斷結果
-test_output, _ = cnn(test_x[:10])
+if if_use_gpu:
+    cnn = cnn.cpu()
+    test_x = test_x.cpu()
+    test_y = test_y.cpu()
+test_output, _ = cnn(test_x[11:20])
 pred_y = torch.max(test_output, 1)[1].data.numpy()
 print(pred_y, 'prediction number')
-print(test_y[:10].numpy(), 'real number')
+print(test_y[11:20].numpy(), 'real number')
 
-# 保存模型
-# try:
-#     torch.save(cnn, 'numbers.pt')
-#     print('save success')
-# except:
-#     print('save failure')
+#保存模型
+try:
+    torch.save(cnn, r'D:/MLProject/NumDetect/numbers.pth')
+    print('save success')
+except:
+    print('save failure')
